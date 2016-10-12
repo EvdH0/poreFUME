@@ -1059,8 +1059,8 @@ def nanopolish(baseFileName,args):
     #   run nano polish 
     # collect reads?
 
-    bwaDir = '/Users/evand/Downloads/nanopolish/bwa/'
-    nanopolishDir = '/Users/evand/Downloads/nanopolish/nanopolish/'
+    bwaDir = '/home/ubuntu/bwa/'
+    nanopolishDir = '/home/ubuntu/nanopolish/'
 
 
     logger.info('Start Nanopolish')
@@ -1079,6 +1079,9 @@ def nanopolish(baseFileName,args):
         logger.info("Start nanopolish loop on %s",thisBarcode)
         os.makedirs(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode))) #create a working directory
 
+        tempFile2 = open("tmpfile2.txt","w")
+        tempFile2.close()
+        tempFile2 = open("tmpfile2.txt","a")
  
 
         tempFile = open("tmpfile.txt","w")
@@ -1088,20 +1091,20 @@ def nanopolish(baseFileName,args):
 
         #copy in the models files, needed for R9, not R7.
 
-        copyfile('/Users/evand/Downloads/nanopolish/nanopolish/etc/r9-models/nanopolish_models.fofn' ,
+        copyfile(nanopolishDir + 'etc/r9-models/nanopolish_models.fofn' ,
                     os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'nanopolish_models.fofn') )
-        copyfile('/Users/evand/Downloads/nanopolish/nanopolish/etc/r9-models/template_median68pA.5mers.model' ,
+        copyfile(nanopolishDir + 'etc/r9-models/template_median68pA.5mers.model' ,
                     os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'template_median68pA.5mers.model') )
 
 
-        copyfile('/Users/evand/Downloads/nanopolish/nanopolish/etc/r9-models/template_median68pA.model' ,
+        copyfile(nanopolishDir +'etc/r9-models/template_median68pA.model' ,
                     os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'template_median68pA.model') )
 
 
 
         #instead of copying over all the raw read files (can be several hundereds of GB's) we make a symlink
         try:
-            os.symlink('/Users/evand/Dropbox (Personal)/DTU/20151217 Tinkering poRe/pass/NB06', os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'NB06'))
+            os.symlink('/extData/test/minion/rawliba/', os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'canbeopened'))
         except OSError as errorCode:
             if errorCode.errno==errno.EEXIST: #Symlink destination already exists
                 #logger.warning('Destination of symlink to raw read files already exist')
@@ -1144,8 +1147,8 @@ def nanopolish(baseFileName,args):
 
         p3 = Popen(['samtools', 
                                 'sort',
-                                 '-f', 
-                                 '-', 
+                                 
+                                 '-o', 
                                  'reads.sorted.bam'],
                                 stdin=p2.stdout, stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
 
@@ -1159,7 +1162,7 @@ def nanopolish(baseFileName,args):
 
         print p0.communicate()
         p0.wait()
-
+	logger.info("Start nanopolish event align")
         #./nanopolish eventalign -t 4 --sam -r 37.poreCamp.2D.min500.OK.afterBC.fasta -b reads.sorted.bam -g 37.poreCamp.2D.min500.OK.afterNC2.fasta --models nanopolish_models.fofn | samtools view -Sb - | samtools sort -f - reads.eventalign.sorted.bam
         pPolish = Popen([os.path.join(nanopolishDir,'nanopolish'),
                 
@@ -1189,8 +1192,8 @@ def nanopolish(baseFileName,args):
 
         p3 = Popen(['samtools', 
                                 'sort',
-                                 '-f', 
-                                 '-', 
+                          
+                                 '-o', 
                                  'reads.eventalign.sorted.bam'],
                                 stdin=p2.stdout, stdout=PIPE, stderr=tempFile, cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
         print p3.communicate()
@@ -1206,7 +1209,8 @@ def nanopolish(baseFileName,args):
         print p0.communicate()
         p0.wait()
 
-
+	logger.info("Done with nanopolish: event align\n")
+	logger.info("Start with parallalization of nanopolish variants\n")
         #python scripts/nanopolish_makerange.py 37.poreCamp.2D.min500.OK.afterNC2.fasta | parallel --results nanopolish.results -P 4 ./nanopolish variants --consensus polished.{1}.fa -w {1} -r 37.poreCamp.2D.min500.OK.afterBC.fasta -b reads.sorted.bam -g 37.poreCamp.2D.min500.OK.afterNC2.fasta -e reads.eventalign.sorted.bam -t 4 --min-candidate-frequency 0.1 --models nanopolish_models.fofn -vvvv
         p1 = Popen(['python' ,
                                os.path.join(nanopolishDir,'scripts','nanopolish_makerange.py'),
@@ -1215,7 +1219,8 @@ def nanopolish(baseFileName,args):
                                ],
                                 stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
 
-        p2 = Popen(['parallel',
+        p2 = Popen(['/usr/local/bin/parallel',
+				'--gnu',
                                '--results' ,
                                'nanopolish.results',
                                '-P',
@@ -1241,19 +1246,21 @@ def nanopolish(baseFileName,args):
                                '0.1',
                                '--models',
                                'nanopolish_models.fofn',
-                               '-vvvv'], 
-                                stdin=p1.stdout, stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+                               ''], 
+                                stdin=p1.stdout, stdout=tempFile2,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
         print p2.communicate()
-
+	logger.info("Done with nanopolish parallelzation\n")
+	logger.info("Printing logfile of the whole run now:\n")
         with open('tmpfile.txt') as f:
             for line in f:
-                print line
-
+                #print line
+		logger.info(line)
+	logger.info("Start collecting the polished data from all the barcodes\n")
         polishedFiles = []
         polishedOutput = open(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'allPolished.fasta'),"w")
         print polishedFiles
         for thisFile in os.listdir(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode))):
-
+	
             if thisFile.endswith(".fa") and thisFile.startswith("polished"):   
              polishedFiles.append(thisFile) #something is wrong with this intend! edit error?
           
@@ -1271,7 +1278,7 @@ def nanopolish(baseFileName,args):
 
     ###Collect polished data
     
-        
+    logger.info("Export nanopolish files from the allPolished to the .afterNP.")
     storeRecords = []
     for thisBarcode in  nanoBarcodes:
         try:
@@ -1296,7 +1303,7 @@ def nanopolish(baseFileName,args):
     handleOutput = open(os.path.join('output', baseFileName + '.afterNP.fasta'), "w") #write to output/mysample.afterBC.fasta
     SeqIO.write(storeRecords, handleOutput, "fasta")
     handleOutput.close()
-
+    logger.info("nanopolish is done")
 
 def annotateCARD(baseFileName,args):
     
@@ -1322,11 +1329,12 @@ def annotateCARD(baseFileName,args):
             'afterBC' :  os.path.join('output' , baseFileName + '.afterBC.fasta'),
             'afterNC1' : os.path.join('output', baseFileName + '.afterNC1.fasta'),
             'afterNC2' : os.path.join('output', baseFileName + '.afterNC2.fasta'),
+  'afterNP' : os.path.join('output' ,baseFileName + '.afterNP.fasta')
         }
     else: #only annotate final set
         qpath = {
-        
-        'afterNC2' : os.path.join('output' ,baseFileName + '.afterNC2.fasta'),
+          'afterNP' : os.path.join('output' ,baseFileName + '.afterNP.fasta')
+       # 'afterNC2' : os.path.join('output' ,baseFileName + '.afterNC2.fasta'),
     }
     
     #for thisQueryFile in qpath:
