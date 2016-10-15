@@ -26,8 +26,9 @@ poreFUME requires Python 2.7 or newer. Furthermore the following packages can be
   
  pip install biopython
  pip install numpy
- pip install pandas
  pip install cython
+ pip install pandas
+
  pip install pysam
 ```
 
