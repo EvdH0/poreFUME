@@ -142,6 +142,7 @@ def main():
     
     parser.add_argument("--annotateAll",help="By default only the  final (demuxed and two times corrected) dataset is annotated, however by turning on this option all the files, raw, after demux, after 1st round of correction, after 2nd round of correction are annotated. This obviously takes longer.",
                                             action="store_true")
+    parser.add_argument("--minCoverage",help="sequences will only be nanopolish'ed if they have a coverage that is higher than this threshold. (default: %(default)s)",nargs='?', default=30,type=int) #Jared suggested using at least 30x coverage
 
 
 
@@ -783,7 +784,7 @@ def deMux(baseFileName,args):
     if inputLength<args.cores*2: #We run into trouble if there are more cores than sequences, since we get emtpy queues intitially. Since this is not a production run scenario we just stop the script here
         raise ValueError('There are less sequence records in the input file than there are cores defined. I guess this is a test run? Increase the amount of sequence in the input file, or lower the number of --cores')
     logger.debug("Each thread will have %s records to process",  int(math.ceil(float(inputLength)/args.cores)))
-	#Split fasta files into batches so they can be processed parallel
+    #Split fasta files into batches so they can be processed parallel
     for i, batch in enumerate(batch_iterator(record_iter, int(math.ceil(float(inputLength)/args.cores)))):
         filename = baseFileName+ '.fasta.'+ str(i) +'.tmp'
         try:
@@ -1105,6 +1106,7 @@ def nanopolish(baseFileName,args):
         #instead of copying over all the raw read files (can be several hundereds of GB's) we make a symlink
         try:
             os.symlink('/extData/test/minion/rawliba/', os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'canbeopened'))
+            #os.symlink('/extData/test/minion/rawporecamp/NB06/',os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'NB06'))
         except OSError as errorCode:
             if errorCode.errno==errno.EEXIST: #Symlink destination already exists
                 #logger.warning('Destination of symlink to raw read files already exist')
@@ -1115,152 +1117,218 @@ def nanopolish(baseFileName,args):
                 raise errorCode
               
                    
-                            
+        #Make individual reads
+        for thisRead in SeqIO.parse(os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterNC2.fasta'])), "fasta"):                    
+            logger.info("Start extracting work of barcode: %s and read: %s\n",thisBarcode,thisRead.id)            
+            readFile = open( os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta'])),"w")
+            readFile.write(">" + str(thisRead.id) + '\n' )
+            readFile.write( str(thisRead.seq) + '\n')
+            readFile.close()
 
         # ../bwa/bwa index 37.poreCamp.2D.min500.OK.afterNC2.fasta
-        p0 = Popen([os.path.join(bwaDir,'bwa'),
-                                'index',
-                                os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterNC2.fasta']))],
-                                stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            runCmd = [os.path.join(bwaDir,'bwa'),
+                                    'index',
+                                    ".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta'])]
+            p0 = Popen(runCmd,
+                                    stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
 
-        print p0.communicate()
-        p0.wait()
+            logger.info(" ".join(runCmd))
+            print p0.communicate()
+            p0.wait()
 
                    
 
-        # ../bwa/bwa mem -x ont2d -t 4 37.poreCamp.2D.min500.OK.afterNC2.fasta 37.poreCamp.2D.min500.OK.afterBC.fasta | samtools view -Sb - | samtools sort -f - reads.sorted.bam
-        p1 = Popen([os.path.join(bwaDir,'bwa'),
-                                'mem',
-                                '-x',
-                                'ont2d',
-                                '-t',
-                                '4',
-                                os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterNC2.fasta'])),
-                                os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterBC.fasta']))],
-                                stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            # ../bwa/bwa mem -x ont2d -t 4 37.poreCamp.2D.min500.OK.afterNC2.fasta 37.poreCamp.2D.min500.OK.afterBC.fasta | samtools view -Sb - | samtools sort -f - reads.sorted.bam
+            runCmd = [os.path.join(bwaDir,'bwa'),
+                                    'mem',
+                                    '-x',
+                                    'ont2d',
+					'-t',
+                                   str(args.cores) ,
+                                    ".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta']),
+                                    os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterBC.fasta']))]
+            p1 = Popen(runCmd,
+                                    stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            logger.info(" ".join(runCmd))
+            minAlign = int(len(thisRead.seq)*float(0.9))
+            logger.info("Setting the minimum alignment to %s, of the total length %s",minAlign,len(thisRead.seq))
+            runCmd = ['python', '/home/ubuntu/poreFUMEnew/piper.py',
+                                    '--minAlignment',
+                                    str(minAlign)]
+            p15 = Popen(runCmd,
+                                    stdin=p1.stdout,stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            logger.info(" ".join(runCmd))
 
-        p2 = Popen(['samtools', 
-                                'view',
-                                 '-Sb', 
-                                 '-'], 
-                                stdin=p1.stdout, stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
-
-        p3 = Popen(['samtools', 
-                                'sort',
-                                 
-                                 '-o', 
-                                 'reads.sorted.bam'],
-                                stdin=p2.stdout, stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
-
-        p3.wait()
-
-        #samtools index reads.sorted.bam
-        p0 = Popen(['samtools',
-                                'index',
-                                'reads.sorted.bam'],
-                                stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
-
-        print p0.communicate()
-        p0.wait()
-	logger.info("Start nanopolish event align")
-        #./nanopolish eventalign -t 4 --sam -r 37.poreCamp.2D.min500.OK.afterBC.fasta -b reads.sorted.bam -g 37.poreCamp.2D.min500.OK.afterNC2.fasta --models nanopolish_models.fofn | samtools view -Sb - | samtools sort -f - reads.eventalign.sorted.bam
-        pPolish = Popen([os.path.join(nanopolishDir,'nanopolish'),
-                
-                                'eventalign' ,
-                                '-t',
-                                '1' ,
-                                '--sam' ,
-                                '-r',
-                                os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterBC.fasta'])),
-                                '-b' ,
-                                'reads.sorted.bam', #we can drop the abolulate path, as we use cwd=
-                                '-g' ,
-                                os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterNC2.fasta'])),
-                                '--models',
-                                'nanopolish_models.fofn', #we can drop the abolulate path, as we use cwd=
-                                '-vvvv'],
-                                stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            runCmd = ['samtools', 
+                                    'view',
+                                     '-Sb', 
+                                     '-']
+            p2 = Popen(runCmd, 
+                                    stdin=p15.stdout, stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            logger.info(" ".join(runCmd))
 
 
+            runCmd = ['samtools', 
+                                    'sort',
+                                     
+                                     '-o', 
+                                     'reads.sorted.bam']
+            p3 = Popen(runCmd,
+                                    stdin=p2.stdout, stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            logger.info(" ".join(runCmd))
+            p3.wait()
 
-        p2 = Popen(['samtools', 
-                                'view',
-                                 '-Sb', 
-                                 '-'], 
-                                stdin=pPolish.stdout, stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            #samtools index reads.sorted.bam
+            runCmd = ['samtools',
+                                    'index',
+                                    'reads.sorted.bam']
+            p0 = Popen(runCmd,
+                                    stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            logger.info(" ".join(runCmd))
+            print p0.communicate()
+            p0.wait()
+
+            proc = Popen(["samtools depth reads.sorted.bam | awk '{sum+=$3} END { print sum/NR}'"], stdout=PIPE, shell=True,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode))) ####!!!!! Running in shell !!!!!
+            logger.info(" ".join(runCmd))
+            thisCoverage =  float(proc.communicate()[0])
+            proc.wait()
+            if thisCoverage<args.minCoverage:
+                logger.warning("Coverage depth of %s is %s and thus lower than %s. Continue with next read",thisRead.id,thisCoverage,args.minCoverage)
+                continue
+            else:
+                logger.info("Coverage depth of %s is %s and thus higher than %s. Continue with this read",thisRead.id,thisCoverage,args.minCoverage)
 
 
-        p3 = Popen(['samtools', 
-                                'sort',
-                          
-                                 '-o', 
-                                 'reads.eventalign.sorted.bam'],
-                                stdin=p2.stdout, stdout=PIPE, stderr=tempFile, cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
-        print p3.communicate()
-        p3.wait()
 
-        #samtools index reads.eventalign.sorted.bam
-        p0 = Popen(['samtools',
-                                'index',
-                                'reads.eventalign.sorted.bam'],
 
-                                stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
 
-        print p0.communicate()
-        p0.wait()
+            logger.info("Start nanopolish event align")
+            #./nanopolish eventalign -t 4 --sam -r 37.poreCamp.2D.min500.OK.afterBC.fasta -b reads.sorted.bam -g 37.poreCamp.2D.min500.OK.afterNC2.fasta --models nanopolish_models.fofn | samtools view -Sb - | samtools sort -f - reads.eventalign.sorted.bam
+            runCmd = [os.path.join(nanopolishDir,'nanopolish'),
+                                    'eventalign' ,
+                                    '-t',
+                                    '1' ,
+                                    '--sam' ,
+                                    '-r',
+                                    os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterBC.fasta'])),
+                                    '-b' ,
+                                    'reads.sorted.bam', #we can drop the abolulate path, as we use cwd=
+                                    '-g' ,
+                                    ".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta']),
+                                    '--models',
+                                    'nanopolish_models.fofn', #we can drop the abolulate path, as we use cwd=
+                                    '-vvvv']
+            pPolish = Popen(runCmd,
+                                    stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
 
-	logger.info("Done with nanopolish: event align\n")
-	logger.info("Start with parallalization of nanopolish variants\n")
-        #python scripts/nanopolish_makerange.py 37.poreCamp.2D.min500.OK.afterNC2.fasta | parallel --results nanopolish.results -P 4 ./nanopolish variants --consensus polished.{1}.fa -w {1} -r 37.poreCamp.2D.min500.OK.afterBC.fasta -b reads.sorted.bam -g 37.poreCamp.2D.min500.OK.afterNC2.fasta -e reads.eventalign.sorted.bam -t 4 --min-candidate-frequency 0.1 --models nanopolish_models.fofn -vvvv
-        p1 = Popen(['python' ,
-                               os.path.join(nanopolishDir,'scripts','nanopolish_makerange.py'),
-                               #'/Users/evand/Downloads/nanopolish/nanopolish/scripts/nanopolish_makerange.py',
-                                os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterNC2.fasta']))
-                               ],
-                                stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
 
-        p2 = Popen(['/usr/local/bin/parallel',
-				'--gnu',
-                               '--results' ,
-                               'nanopolish.results',
-                               '-P',
-                               str(args.cores),
-                               #'/Users/evand/Downloads/nanopolish/nanopolish/nanopolish',
-                               os.path.join(nanopolishDir,'nanopolish'),
-                               'variants',
-                               '--consensus',
-                               'polished.{1}.fa',
-                               '-w',
-                               '{1}',
-                               '-r',
-                               os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterBC.fasta'])),
-                               '-b',
-                               'reads.sorted.bam',
-                               '-g',
-                               os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterNC2.fasta'])),
-                               '-e',
-                               'reads.eventalign.sorted.bam',
-                               '-t',
-                               '1',
-                               '--min-candidate-frequency',
-                               '0.1',
-                               '--models',
-                               'nanopolish_models.fofn',
-                               ''], 
-                                stdin=p1.stdout, stdout=tempFile2,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
-        print p2.communicate()
-	logger.info("Done with nanopolish parallelzation\n")
-	logger.info("Printing logfile of the whole run now:\n")
+            logger.info(" ".join(runCmd))
+            runCmd = ['samtools', 
+                        'view',
+                         '-Sb', 
+                         '-']
+            p2 = Popen(runCmd, 
+                                    stdin=pPolish.stdout, stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+
+            logger.info(" ".join(runCmd))
+
+            runCmd = ['samtools', 
+                                    'sort',
+                              
+                                     '-o', 
+                                     'reads.eventalign.sorted.bam']
+            p3 = Popen(runCmd,
+                                    stdin=p2.stdout, stdout=PIPE, stderr=tempFile, cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            logger.info(" ".join(runCmd))
+            print p3.communicate()
+            p3.wait()
+
+            #samtools index reads.eventalign.sorted.bam
+            runCmd = ['samtools',
+                    'index',
+                    'reads.eventalign.sorted.bam']
+            p0 = Popen(runCmd,
+
+                                    stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            logger.info(" ".join(runCmd))
+            print p0.communicate()
+            p0.wait()
+
+            logger.info("Done with nanopolish: event align\n")
+            logger.info("Start with nanopolish parallelzation of barcode: %s and read: %s\n",thisBarcode,thisRead.id)            
+            #python scripts/nanopolish_makerange.py 37.poreCamp.2D.min500.OK.afterNC2.fasta | parallel --results nanopolish.results -P 4 ./nanopolish variants --consensus polished.{1}.fa -w {1} -r 37.poreCamp.2D.min500.OK.afterBC.fasta -b reads.sorted.bam -g 37.poreCamp.2D.min500.OK.afterNC2.fasta -e reads.eventalign.sorted.bam -t 4 --min-candidate-frequency 0.1 --models nanopolish_models.fofn -vvvv
+            runCmd = ['python' ,
+                                   os.path.join(nanopolishDir,'scripts','nanopolish_makerange.py'),
+                                   #'/Users/evand/Downloads/nanopolish/nanopolish/scripts/nanopolish_makerange.py',
+                                    #os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterNC2.fasta']))
+                                    ".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta'])
+                                   ]
+            p1 = Popen(runCmd,
+                                    stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            logger.info(" ".join(runCmd))
+            runCmd = ['/usr/local/bin/parallel',
+                    '--gnu',
+                                   '--results' ,
+                                   'nanopolish.results',
+                                   '-P',
+                                   str(args.cores),
+                                   os.path.join(nanopolishDir,'nanopolish'),
+                                   'variants',
+                                   '--consensus',
+                                   'polished.{1}.' + thisRead.id +'.fa',
+                                   '-w',
+                                   '{1}',
+                                   '-r',
+                                   os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterBC.fasta'])),
+                                   '-b',
+                                   'reads.sorted.bam',
+                                   '-g',
+                                   ".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta']),
+                                   '-e',
+                                   'reads.eventalign.sorted.bam',
+                                   '-t',
+                                   '8',
+                                   '--min-candidate-frequency',
+                                   '0.1',
+                                   '--models',
+                                   'nanopolish_models.fofn',
+                                   '']
+            logger.info(" ".join(runCmd))
+            p2 = Popen(runCmd, 
+                                    stdin=p1.stdout, stdout=tempFile2,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
+            print p2.communicate()
+            logger.info("Done with nanopolish parallelzation of barcode: %s and read: %s\n",thisBarcode,thisRead.id)            
+            #if int(thisRead.id) == 1:
+            #    logger.error("Reached programmed  end")
+            #    break
+
+            #Clean up all the intermidiate files
+            os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'reads.eventalign.sorted.bam'))
+            os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'reads.sorted.bam'))
+            os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'reads.eventalign.sorted.bam.bai'))
+            os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'reads.sorted.bam.bai'))
+            os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta'])))
+            os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta.bwt'])))
+            os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta.pac'])))
+            os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta.ann'])))
+            os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta.amb'])))
+            os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta.sa'])))
+            os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta.fai'])))
+
+
+
+        logger.info("Done with nanopolish parallelzation\n")
+        logger.info("Printing logfile of the whole run now:\n")
         with open('tmpfile.txt') as f:
             for line in f:
                 #print line
-		logger.info(line)
-	logger.info("Start collecting the polished data from all the barcodes\n")
+                logger.info(line)
+        logger.info("Start collecting the polished data from all the barcodes\n")
         polishedFiles = []
         polishedOutput = open(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'allPolished.fasta'),"w")
         print polishedFiles
         for thisFile in os.listdir(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode))):
-	
+    
             if thisFile.endswith(".fa") and thisFile.startswith("polished"):   
              polishedFiles.append(thisFile) #something is wrong with this intend! edit error?
           
@@ -1273,8 +1341,8 @@ def nanopolish(baseFileName,args):
         p1 = Popen(cmd,
                                 stdout=polishedOutput,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
         print p1.communicate()
-        #python nanopolish_merge.py polished.*.fa > polished_genome.fa
-        
+            #python nanopolish_merge.py polished.*.fa > polished_genome.fa
+            
 
     ###Collect polished data
     
@@ -1334,7 +1402,7 @@ def annotateCARD(baseFileName,args):
     else: #only annotate final set
         qpath = {
           'afterNP' : os.path.join('output' ,baseFileName + '.afterNP.fasta')
-       # 'afterNC2' : os.path.join('output' ,baseFileName + '.afterNC2.fasta'),
+          ,'afterNC2' : os.path.join('output' ,baseFileName + '.afterNC2.fasta'),
     }
     
     #for thisQueryFile in qpath:
@@ -1399,4 +1467,6 @@ def annotateCARD(baseFileName,args):
 
 if __name__ == "__main__":
     main()
+
+
 
