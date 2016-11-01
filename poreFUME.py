@@ -1105,7 +1105,7 @@ def nanopolish(baseFileName,args):
 
         #instead of copying over all the raw read files (can be several hundereds of GB's) we make a symlink
         try:
-            os.symlink('/extData/test/minion/rawliba/', os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'canbeopened'))
+            os.symlink('/home/ubuntu/extData/pass', os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'canbeopened'))
             #os.symlink('/extData/test/minion/rawporecamp/NB06/',os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'NB06'))
         except OSError as errorCode:
             if errorCode.errno==errno.EEXIST: #Symlink destination already exists
@@ -1152,7 +1152,7 @@ def nanopolish(baseFileName,args):
             logger.info(" ".join(runCmd))
             minAlign = int(len(thisRead.seq)*float(0.9))
             logger.info("Setting the minimum alignment to %s, of the total length %s",minAlign,len(thisRead.seq))
-            runCmd = ['python', '/home/ubuntu/poreFUMEnew/piper.py',
+            runCmd = ['python', '/home/ubuntu/poreFUME/piper.py',
                                     '--minAlignment',
                                     str(minAlign)]
             p15 = Popen(runCmd,
@@ -1190,7 +1190,13 @@ def nanopolish(baseFileName,args):
 
             proc = Popen(["samtools depth reads.sorted.bam | awk '{sum+=$3} END { print sum/NR}'"], stdout=PIPE, shell=True,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode))) ####!!!!! Running in shell !!!!!
             logger.info(" ".join(runCmd))
-            thisCoverage =  float(proc.communicate()[0])
+            try:
+	        thisCoverage =  float(proc.communicate()[0])
+            except:
+                logger.error("Coverage depth of %s was not calculated succesfully, no reads mapped?. Continue with next read!",thisRead.id)
+                thisCoverage = 0
+
+ 
             proc.wait()
             if thisCoverage<args.minCoverage:
                 logger.warning("Coverage depth of %s is %s and thus lower than %s. Continue with next read",thisRead.id,thisCoverage,args.minCoverage)
@@ -1287,16 +1293,26 @@ def nanopolish(baseFileName,args):
                                    '-e',
                                    'reads.eventalign.sorted.bam',
                                    '-t',
-                                   '8',
+                                   '32',
                                    '--min-candidate-frequency',
                                    '0.1',
                                    '--models',
                                    'nanopolish_models.fofn',
                                    '']
             logger.info(" ".join(runCmd))
-            p2 = Popen(runCmd, 
+            try:
+                p2 = Popen(runCmd, 
                                     stdin=p1.stdout, stdout=tempFile2,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
-            print p2.communicate()
+            except:
+                logger.error("Somehow the Popen of nanopolish failed, this requires attention!")
+                continue
+
+            try:
+                print p2.communicate()
+            except:
+                logger.error("Somehow the nanopolish command failed, this requires attention!")
+                continue
+
             logger.info("Done with nanopolish parallelzation of barcode: %s and read: %s\n",thisBarcode,thisRead.id)            
             #if int(thisRead.id) == 1:
             #    logger.error("Reached programmed  end")
