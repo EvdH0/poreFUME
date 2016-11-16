@@ -35,5 +35,5 @@ cd DAZZ_DB; git checkout 8cb2f29c4011a2c2; make
 
 #install blast
 cd $curdir
-wget ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/ncbi-blast-2.4.0+-x64-linux.tar.gz
+wget ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/2.4.0/ncbi-blast-2.4.0+-x64-linux.tar.gz
 tar -xzf ncbi-blast-2.4.0+-x64-linux.tar.gz
