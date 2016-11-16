@@ -45,7 +45,8 @@ def main():
     1a. Call demux()
     1b. Call demuxCollect()
     2.  Call nanocorrect()
-    3.  Call annotateCARD()
+    3.  Call nanopolish()
+    4.  Call annotateCARD()
     done
     
     All the steps can be turned on and off using --skipXXX this allows flexible analysis and intermidate exits.
@@ -53,7 +54,8 @@ def main():
     1a Demux
     uses the Smith-Waterman implementation which is very slow on this dataset. Relevant parameters are --barcodeEdge , --barcodeThreshold and --match, --mismatch, --gapopen, --gapextend. The returned sequences will be reverse complemented such that the read always starts with the forward primer. The collected reads are stored in mysample.AFTERBC.fasta
     2. nanocorrect uses nanocorrect by Loman,Simpson,Quick and is also slow. Relevant parameters are --pathNanocorrect. The collected reads are stored as mysample.AFTERNC1.fasta (first round of nanocorrect) and mysample.AFTERNC2.fasta (second round of nanocorrect without the coverage requirement)
-    3. annotateCARD find high scoring segmens in the result list, which is not extremly fast. --annotateAll will invoke the annotation of the start and intermidiate files (ie. the afterBC and afterNC1 )
+    3. nanopolish uses nanopolish by Loman,Simpson,Quick. 
+    4. annotateCARD find high scoring segmens in the result list, which is not extremly fast. --annotateAll will invoke the annotation of the start and intermidiate files (ie. the afterBC and afterNC1 )
     
     
     
@@ -86,6 +88,8 @@ def main():
                         type=str)
     parser.add_argument("fileBarcodes", help="path to FASTA where the barcodes are stored, format should be ie F_34 for forward and R_34 for reverse barcode",
                         type=str)
+
+
     parser.add_argument("--PacBioLegacyBarcode",help="the pacbio_barcodes_paired.fasta file has first digist as 4 instead of 04, turning this option on will fix this",
                         action="store_true")
     
@@ -136,7 +140,7 @@ def main():
     parser.add_argument("--pathNanopolish",help="Set the path to the nanopolish files (default: %(default)s)",nargs='?', default="/Users/evand/Downloads/nanopolish/nanopolish/",type=str) #location of nanopolish
     parser.add_argument("--pathBWA",help="Set the path to BWA (default: %(default)s)",nargs='?', default="/Users/evand/Downloads/nanopolish/bwa",type=str) #location of nanopolish
 
-    parser.add_argument("--pathRawreads",help="Set the path to the raw reads (.fast5 files), nanopolish needs this",nargs='?', default="inputData/NB6",type=str) #location of fast5 files as refered to in the datafiles created by poreTools. See nanopolish docs for more info
+    parser.add_argument("--pathRawreads",help="Set the path to the raw reads (.fast5 files), nanopolish needs this. As a hint, this should be the absolute path to which the last part of the header on the poretools produced fasta file referes to. poreFUME will make a symlink to the directory containing the .fast5 files.",nargs='?', default="inputData/NB6",type=str) #location of fast5 files as refered to in the datafiles created by poreTools. See nanopolish docs for more info
 
     parser.add_argument("--pathCARD",help="Set the path to CARD fasta file (default: %(default)s)",nargs='?', default="inputData/n.fasta.protein.homolog.fasta",type=str) 
     
@@ -298,8 +302,9 @@ def main():
                 #TODO: build a flag so this can be overwritten. Smart solution to store these files anyway
                 logger.info(nanopolishDir + ' existst but was empty, so proceed')
                 os.makedirs(nanopolishDir) #create it
-
-    
+        if not os.path.exists(args.pathRawreads): #When we run nanopolish we need to have the raw reads defined
+            raise IOError('the pathRawreads is not valid! This should point to your .fast5 files, see doc.')       
+      
     if not args.skipCARD: #Do a check for clean directory now instead of when demux is done
         ##Direcotry handeling
         annotationDir = getAnnotationDir(baseFileName)
@@ -1080,14 +1085,14 @@ def nanopolish(baseFileName,args):
         logger.info("Start nanopolish loop on %s",thisBarcode)
         os.makedirs(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode))) #create a working directory
 
-        tempFile2 = open("tmpfile2.txt","w")
+        tempFile2 = open("nanopolish.debug.2.txt","w")
         tempFile2.close()
-        tempFile2 = open("tmpfile2.txt","a")
+        tempFile2 = open("nanopolish.debug.2.txt","a")
  
 
-        tempFile = open("tmpfile.txt","w")
+        tempFile = open("nanopolish.debug.1.txt","w")
         tempFile.close()
-        tempFile = open("tmpfile.txt","a")
+        tempFile = open("nanopolish.debug.1.txt","a")
 
 
         #copy in the models files, needed for R9, not R7.
@@ -1102,17 +1107,28 @@ def nanopolish(baseFileName,args):
                     os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'template_median68pA.model') )
 
 
+        #Nanopolish needs the raw event data. In order to get this the user supplies a pathRawreads to where the .fast5 files are located (currently only 1 raw read folder is supported). Next the first record is opened to find what paths is used to point the fast5 to by poretools. 
+        for thisRead in SeqIO.parse(os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterBC.fasta'])),"fasta"): #Open the barcode split file, this should contain the info to the original read name
+            fast5StorePlace =  os.path.split(thisRead.description.split(' ')[-1].rstrip())[0] #This will first split the header of the fasta record into chunks by ' '. The last chunk (-1) contains the path to the .fast5 file. To be sure remove the line end (rstrip). Then parse the filename and only take the 'head' and not the tail of the whole path. 
+            break #we only need the first record, we assume the rest is the same
+        
+        #currenty a nested symlink is not supported
+        if os.path.dirname(fast5StorePlace) == "":
+            pass
+        else:
+            raise NotImplementedError('Currently poreFUME only supports 1-level deep directory pointers to the raw fast5 directory. ie. you ran poretools with poretools fasta --type 2D long/path/to/your/fast5/files/* instead run with poretools fasta --type 2D long/*')
 
         #instead of copying over all the raw read files (can be several hundereds of GB's) we make a symlink
         try:
-            os.symlink('/home/ubuntu/extData/pass', os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'canbeopened'))
-            #os.symlink('/extData/test/minion/rawporecamp/NB06/',os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'NB06'))
+            os.symlink(args.pathRawreads, os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),fast5StorePlace))
+            
+            #os.symlink('/home/ubuntu/extData/porecamp/pass/NB06/',os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'NB06'))
         except OSError as errorCode:
             if errorCode.errno==errno.EEXIST: #Symlink destination already exists
-                #logger.warning('Destination of symlink to raw read files already exist')
-                print 'Des extist'
-                pass
-                #raise errorCode
+                logger.warning('Destination of symlink to raw read files already exist')
+                os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),fast5StorePlace))
+                #os.symlink('/home/ubuntu/extData/porecamp/pass/NB06/',os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'NB06'))
+		os.symlink(args.pathRawreads, os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),fast5StorePlace))
             else:
                 raise errorCode
               
@@ -1152,7 +1168,7 @@ def nanopolish(baseFileName,args):
             logger.info(" ".join(runCmd))
             minAlign = int(len(thisRead.seq)*float(0.9))
             logger.info("Setting the minimum alignment to %s, of the total length %s",minAlign,len(thisRead.seq))
-            runCmd = ['python', '/home/ubuntu/poreFUME/piper.py',
+            runCmd = ['python', os.path.join(os.getcwd(),'piper.py'),
                                     '--minAlignment',
                                     str(minAlign)]
             p15 = Popen(runCmd,
@@ -1200,6 +1216,14 @@ def nanopolish(baseFileName,args):
             proc.wait()
             if thisCoverage<args.minCoverage:
                 logger.warning("Coverage depth of %s is %s and thus lower than %s. Continue with next read",thisRead.id,thisCoverage,args.minCoverage)
+                os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'reads.sorted.bam'))
+                os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'reads.sorted.bam.bai'))
+                os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta'])))
+                os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta.bwt'])))
+                os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta.pac'])))
+                os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta.ann'])))
+                os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta.amb'])))
+                os.remove(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta.sa'])))
                 continue
             else:
                 logger.info("Coverage depth of %s is %s and thus higher than %s. Continue with this read",thisRead.id,thisCoverage,args.minCoverage)
@@ -1272,7 +1296,7 @@ def nanopolish(baseFileName,args):
             p1 = Popen(runCmd,
                                     stdout=PIPE,stderr=tempFile,cwd= os.path.join(getNanopolishDir(baseFileName),str(thisBarcode)))
             logger.info(" ".join(runCmd))
-            runCmd = ['/usr/local/bin/parallel',
+            runCmd = ['parallel',
                     '--gnu',
                                    '--results' ,
                                    'nanopolish.results',
@@ -1342,7 +1366,7 @@ def nanopolish(baseFileName,args):
         logger.info("Start collecting the polished data from all the barcodes\n")
         polishedFiles = []
         polishedOutput = open(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'allPolished.fasta'),"w")
-        print polishedFiles
+        #print polishedFiles
         for thisFile in os.listdir(os.path.join(getNanopolishDir(baseFileName),str(thisBarcode))):
     
             if thisFile.endswith(".fa") and thisFile.startswith("polished"):   
