@@ -10,14 +10,17 @@ Demultiplex, correct and annotate antibiotic resistance genes in nanopore data
 
 ```
 usage: poreFUME.py [-h] [--PacBioLegacyBarcode] [--verbose] [--overwriteDemux]
-                   [--overwriteNanocorrect] [--overwriteCARD] [--skipDemux]
-                   [--skipDemuxCollect] [--skipNanocorrect] [--skipCARD]
+                   [--overwriteNanocorrect] [--overwriteNanopolish]
+                   [--overwriteCARD] [--skipDemux] [--skipDemuxCollect]
+                   [--skipNanocorrect] [--skipNanopolish] [--skipCARD]
                    [--match [MATCH]] [--mismatch [MISMATCH]]
                    [--gapopen [GAPOPEN]] [--gapextend [GAPEXTEND]]
                    [--cores [CORES]] [--barcodeThreshold [BARCODETHRESHOLD]]
                    [--barcodeEdge [BARCODEEDGE]]
                    [--pathNanocorrect [PATHNANOCORRECT]]
-                   [--pathCARD [PATHCARD]] [--annotateAll]
+                   [--pathNanopolish [PATHNANOPOLISH]] [--pathBWA [PATHBWA]]
+                   [--pathRawreads [PATHRAWREADS]] [--pathCARD [PATHCARD]]
+                   [--annotateAll] [--minCoverage [MINCOVERAGE]]
                    fileONTreads fileBarcodes
 
 positional arguments:
@@ -38,15 +41,19 @@ optional arguments:
   --overwriteNanocorrect
                         overwrite the results in the output/nanocorrect/runid
                         directory if the exist
+  --overwriteNanopolish
+                        overwrite the results in the output/nanopolish/runid
+                        directory, if the exist
   --overwriteCARD       overwrite the results in the output/annotation/runid
                         directory if the exist
   --skipDemux           Skip the barcode demux step and proceed with
                         nanocorrect, cannot be used with overwrite. Assumes
                         the output/barcode/ and output/ directory are
                         populated accordingly
-  --skipDemuxCollect    will skip the demux it self and go to colletion based
+  --skipDemuxCollect    will skip the demux it self and go to collection based
                         on the pickle
   --skipNanocorrect     Skip the nanocorrect step.
+  --skipNanopolish      Skip the nanocorrect step.
   --skipCARD            Skip the CARD annotation
   --match [MATCH]       Score for match in alignment (default: 2.7)
   --mismatch [MISMATCH]
@@ -63,7 +70,19 @@ optional arguments:
                         for a barcode. (default: 60)
   --pathNanocorrect [PATHNANOCORRECT]
                         Set the path to the nanocorrect files (default:
-                        /Users/evand/Downloads/testnanocorrect/nanocorrect/)
+                        /Users/evand/nanocorrect/nanocorrect/)
+  --pathNanopolish [PATHNANOPOLISH]
+                        Set the path to the nanopolish files (default:
+                        /Users/evand/nanopolish/nanopolish/)
+  --pathBWA [PATHBWA]   Set the path to BWA (default:
+                        /Users/evand/nanopolish/bwa)
+  --pathRawreads [PATHRAWREADS]
+                        Set the path to the raw reads (.fast5 files),
+                        nanopolish needs this. As a hint, this should be the
+                        absolute path to which the last part of the header on
+                        the poretools produced fasta file referes to. poreFUME
+                        will make a symlink to the directory containing the
+                        .fast5 files.
   --pathCARD [PATHCARD]
                         Set the path to CARD fasta file (default:
                         inputData/n.fasta.protein.homolog.fasta)
@@ -72,6 +91,10 @@ optional arguments:
                         this option all the files, raw, after demux, after 1st
                         round of correction, after 2nd round of correction are
                         annotated. This obviously takes longer.
+  --minCoverage [MINCOVERAGE]
+                        sequences will only be nanopolish'ed if they have a
+                        coverage that is higher than this threshold. (default:
+                        30)
 ```
 
 
@@ -86,7 +109,8 @@ Folders ```output/barcode/mySample/```, ```output/nanocorrect/mySample/```, ```o
 The pipeline consists of 3 steps:
 1.  barcode demultiplexing
 2.  error correction using nanocorrect
-3.  annotation of the reads using the CARD datbase
+3.  polishing using nanopolish
+4.  annotation of the reads using the CARD datbase
 
 Each step can be skipped using the relevant ```--skipXXX``` parameter. For example when only barcodes need to extracted ```--skipNanocorrect``` and ```--skipCARD``` can be used.
 
@@ -102,7 +126,11 @@ _Note: when poreFUME already find data in ```output/barcode/mySample/``` it will
 When ```--skipNanocorrect``` is not set (_default_) poreFUME will invoke [nanocorrect](https://github.com/jts/nanocorrect) to error correct the demultiplexed reads. Since nanocorrect needs its own directory to run in when ran in parallel, it will create ```/output/nanocorrect/mySample/{barcodeID}/``` directories. Inside [DALIGNER](https://github.com/thegenemyers/DALIGNER) and [poa](https://sourceforge.net/projects/poamsa/) will be run as called by nanocorrect. ```--pathNanocorrect``` can be set to point to the nanopore package.  
 _Note: when poreFUME already find data in ```output/nanocorrect/mySample/``` it will terminate, this can be overruled by passing the ```--overwriteNanocorrect``` flag. This will remove all the existing data in ```output/nanocorrect/mySample/```_.
 
-### Step 3. annotation using CARD
+### Step 3. polishing of the nanocorrected data using nanopolish
+When ```--skipNanopolish``` is not set (_default_) poreFUME will invoke [nanopolish](https://github.com/jts/nanopolish) to polish the nanocorrected data. Nanopolish will be run in an own directory , it will create ```/output/nanopolish/mySample/{barcodeID}/``` directories. ```--pathRawreads``` is required, and should point to the directory containing the .fast5 files.   
+_Note: when poreFUME already find data in ```output/nanopolish/mySample/``` it will terminate, this can be overruled by passing the ```--overwriteNanopolish``` flag. This will remove all the existing data in ```output/nanopolish/mySample/```_.
+
+### Step 4. annotation using CARD
 The final step is annotation of the data using the [CARD database](https://card.mcmaster.ca/) when ```--skipCARD``` is not set (_default_). This part will look for ```output/mySample.afterNC2.fasta``` and annotate the file against the CARD database.  ```--pathCARD``` is used to point to the nucleotide CARD database. When ```--annotateAll``` is set, also ```inputFiles/mySample.fasta``` , ```output/mySample.afterBC.fasta``` and ```output/mySample.afterNC1.fasta``` will be annotated. The output is a CSV file in ```output/annotation/mySample/mySample.AFTERNC2.annotation.csv``` containing the readname and the relevant CARD information.   
 _Note: with ```--skipCARD``` the output in ```output/annotation/mySample/``` will be overwritten_.
 
@@ -111,6 +139,7 @@ With the ```--cores``` flag the following processes can be parallelized:
 * Smith-Waterman algorithm to detect barcodes
 * nanocorrect on multiple barcodes
 * BLAST to annotate with the CARD database. 
+* the ```nanopolish variants``` command is invoked using the -t (thread) parameter 
 
 ## Testing
 To test the working of poreFUME you can run ```nosetests -v``` which should output something like
