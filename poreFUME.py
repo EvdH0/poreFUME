@@ -1317,7 +1317,7 @@ def nanopolish(baseFileName,args):
                                    '-e',
                                    'reads.eventalign.sorted.bam',
                                    '-t',
-                                   '32',
+                                   str(args.cores),
                                    '--min-candidate-frequency',
                                    '0.1',
                                    '--models',
