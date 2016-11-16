@@ -74,6 +74,12 @@ class TestDependencies(unittest.TestCase):
         
     def testLAcat(self):
         self.assertTrue(poreFUME.cmdExists('LAcat'))
+
+    def testSamtools(self):
+        self.assertTrue(poreFUME.cmdExists('samtools'))
+
+    def testParallel(self):
+        self.assertTrue(poreFUME.cmdExists('parallel'))
 if __name__ == '__main__':
     
     
