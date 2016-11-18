@@ -3,7 +3,7 @@ import poreFUME
 import unittest
 import os
 
-
+from subprocess import Popen, PIPE
 
 from argparse import Namespace
 
@@ -80,6 +80,12 @@ class TestDependencies(unittest.TestCase):
 
     def testParallel(self):
         self.assertTrue(poreFUME.cmdExists('parallel'))
+
+    def testbwaVersion(self):
+        process = Popen(['bwa' ], stdout=PIPE, stderr=PIPE ) 
+        stdout, stderr = process.communicate()
+        process.wait() #wait till finished
+        self.assertTrue(stderr.split('\n')[2].split(': ')[1].rstrip() == '0.7.15-r1142-dirty')
 if __name__ == '__main__':
     
     

@@ -9,22 +9,24 @@
 curdir=`pwd`
 echo $curdir
 
-cd test
-cd data
-wget http://www.student.dtu.dk/~evand/poreFUME_data/testSet75.tar.gz
-tar -zxvf testSet75.tar.gz
+if [ ! -f test/data/testSet75.tar.gz ]; then
+	cd test
+	cd data
+	wget http://www.student.dtu.dk/~evand/poreFUME_data/testSet75.tar.gz
+	tar -zxvf testSet75.tar.gz
+fi
+
+if [ ! -f inputData/testSet75.fasta ]; then
+	cd $curdir
+	cd inputData
+	wget http://www.student.dtu.dk/~evand/poreFUME_data/testSet75.fasta
+fi
 
 cd $curdir
-cd inputData
-wget http://www.student.dtu.dk/~evand/poreFUME_data/testSet75.fasta
+python poreFUME.py inputData/testSet76.fasta inputData/pb_39.fasta --PacBioLegacyBarcode --cores 1 --pathCARD=inputData/n.fasta.protein.homolog.fasta --pathNanocorrect=/home/ubuntu/poreFUME/nanocorrect/ --pathRawreads=/home/ubuntu/poreFUME/test/data/testSet75 --overwriteNanocorrect --pathNanopolish=/home/ubuntu/poreFUME/nanopolish/ --overwriteNanopolish --overwriteDemux --overwriteCARD
 
-cd $curdir
-python poreFUME.py inputData/testSet75.fasta inputData/pb_39.fasta --PacBioLegacyBarcode --cores 8 --pathCARD=inputData/n.fasta.protein.homolog.fasta --pathNanocorrect=/home/ubuntu/poreFUME/nanocorrect/ --pathRawreads=/home/ubuntu/poreFUMEtestInstall/poreFUME/test/data/testSet75 --overwriteNanocorrect --pathNanopolish=/home/ubuntu/poreFUMEtestInstall/poreFUME/nanopolish/ --overwriteNanopolish --overwriteDemux --overwriteCARD
-
-DIFF=$(diff output/annotation/testSet75/testSet75.afterNP.annotated.csv test/data/testSet75.afterNP.annotated.csv) 
-if [ "$DIFF" != "" ] 
-then
-    echo "Integration test faile, the output in output/annotation/testSet75/testSet75.afterNP.annotated.csv is not what is expected"
+if ! diff -q output/annotation/testSet75/testSet75.afterNP.annotated.csv test/data/testSet75.afterNP.annotated.csv > /dev/null  2>&1; then
+    echo "Integration test failed, the output in output/annotation/testSet75/testSet75.afterNP.annotated.csv is not what is expected"
 else
     echo "Integration test passed!"
 fi
