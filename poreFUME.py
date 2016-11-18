@@ -234,7 +234,20 @@ def main():
         logger.info('LAcat found in path')
         
     
+    if not cmdExists('bwa'):
+        raise RuntimeError('bwa is not avialable in PATH, did you run . env.sh? Check install.sh or install manually from https://github.com/lh3/bwa')
+    else:
+        logger.info('bwa found in path')
 
+    if not cmdExists('samtools'):
+        raise RuntimeError('samtools is not avialable in PATH, did you run . env.sh? Check install.sh or install manually from https://github.com/samtools/samtools')
+    else:
+        logger.info('samtools found in path')
+        
+    if not cmdExists('parallel'):
+        raise RuntimeError('GNU parallel is not avialable, did you install it correctly? Check install.sh or install manually from https://www.gnu.org/software/parallel/')
+    else:
+        logger.info('GNU parallel found')
     
     if not os.path.isfile(args.fileONTreads):
         raise IOError('fileONTreads does not exist',args.fileONTreads)
@@ -282,6 +295,9 @@ def main():
 
 
     if not args.skipNanopolish: #Do a check for clean directory now instead of when demux is done
+        if not os.path.exists(args.pathNanopolish):
+            raise IOError('the pathNanopolish is not valid!')
+
         ##Direcotry handeling
         nanopolishDir = getNanopolishDir(baseFileName)
         if not os.path.exists(nanopolishDir): #it it does not exist
@@ -1065,8 +1081,6 @@ def nanopolish(baseFileName,args):
     #   run nano polish 
     # collect reads?
 
-    bwaDir = '/home/ubuntu/bwa/'
-    nanopolishDir = '/home/ubuntu/nanopolish/'
 
 
     logger.info('Start Nanopolish')
@@ -1097,13 +1111,13 @@ def nanopolish(baseFileName,args):
 
         #copy in the models files, needed for R9, not R7.
 
-        copyfile(nanopolishDir + 'etc/r9-models/nanopolish_models.fofn' ,
+        copyfile(os.path.join(args.pathNanopolish, 'etc/r9-models/nanopolish_models.fofn') ,
                     os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'nanopolish_models.fofn') )
-        copyfile(nanopolishDir + 'etc/r9-models/template_median68pA.5mers.model' ,
+        copyfile(os.path.join(args.pathNanopolish, 'etc/r9-models/template_median68pA.5mers.model') ,
                     os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'template_median68pA.5mers.model') )
 
 
-        copyfile(nanopolishDir +'etc/r9-models/template_median68pA.model' ,
+        copyfile(os.path.join(args.pathNanopolish, 'etc/r9-models/template_median68pA.model') ,
                     os.path.join(getNanopolishDir(baseFileName),str(thisBarcode),'template_median68pA.model') )
 
 
@@ -1142,7 +1156,7 @@ def nanopolish(baseFileName,args):
             readFile.close()
 
         # ../bwa/bwa index 37.poreCamp.2D.min500.OK.afterNC2.fasta
-            runCmd = [os.path.join(bwaDir,'bwa'),
+            runCmd = [os.path.join('bwa'),
                                     'index',
                                     ".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta'])]
             p0 = Popen(runCmd,
@@ -1155,7 +1169,7 @@ def nanopolish(baseFileName,args):
                    
 
             # ../bwa/bwa mem -x ont2d -t 4 37.poreCamp.2D.min500.OK.afterNC2.fasta 37.poreCamp.2D.min500.OK.afterBC.fasta | samtools view -Sb - | samtools sort -f - reads.sorted.bam
-            runCmd = [os.path.join(bwaDir,'bwa'),
+            runCmd = [os.path.join('bwa'),
                                     'mem',
                                     '-x',
                                     'ont2d',
@@ -1234,7 +1248,7 @@ def nanopolish(baseFileName,args):
 
             logger.info("Start nanopolish event align")
             #./nanopolish eventalign -t 4 --sam -r 37.poreCamp.2D.min500.OK.afterBC.fasta -b reads.sorted.bam -g 37.poreCamp.2D.min500.OK.afterNC2.fasta --models nanopolish_models.fofn | samtools view -Sb - | samtools sort -f - reads.eventalign.sorted.bam
-            runCmd = [os.path.join(nanopolishDir,'nanopolish'),
+            runCmd = [os.path.join(args.pathNanopolish,'nanopolish'),
                                     'eventalign' ,
                                     '-t',
                                     '1' ,
@@ -1288,7 +1302,7 @@ def nanopolish(baseFileName,args):
             logger.info("Start with nanopolish parallelzation of barcode: %s and read: %s\n",thisBarcode,thisRead.id)            
             #python scripts/nanopolish_makerange.py 37.poreCamp.2D.min500.OK.afterNC2.fasta | parallel --results nanopolish.results -P 4 ./nanopolish variants --consensus polished.{1}.fa -w {1} -r 37.poreCamp.2D.min500.OK.afterBC.fasta -b reads.sorted.bam -g 37.poreCamp.2D.min500.OK.afterNC2.fasta -e reads.eventalign.sorted.bam -t 4 --min-candidate-frequency 0.1 --models nanopolish_models.fofn -vvvv
             runCmd = ['python' ,
-                                   os.path.join(nanopolishDir,'scripts','nanopolish_makerange.py'),
+                                   os.path.join(args.pathNanopolish,'scripts','nanopolish_makerange.py'),
                                    #'/Users/evand/Downloads/nanopolish/nanopolish/scripts/nanopolish_makerange.py',
                                     #os.path.join(getNanocorrectDirABS(baseFileName),str(thisBarcode),".".join([str(thisBarcode),baseFileName,'afterNC2.fasta']))
                                     ".".join([str(thisBarcode),baseFileName,thisRead.id,'fasta'])
@@ -1302,7 +1316,7 @@ def nanopolish(baseFileName,args):
                                    'nanopolish.results',
                                    '-P',
                                    str(args.cores),
-                                   os.path.join(nanopolishDir,'nanopolish'),
+                                   os.path.join(args.pathNanopolish,'nanopolish'),
                                    'variants',
                                    '--consensus',
                                    'polished.{1}.' + thisRead.id +'.fa',
@@ -1359,7 +1373,7 @@ def nanopolish(baseFileName,args):
 
         logger.info("Done with nanopolish parallelzation\n")
         logger.info("Printing logfile of the whole run now:\n")
-        with open('tmpfile.txt') as f:
+        with open('nanopolish.debug.1.txt') as f:
             for line in f:
                 #print line
                 logger.info(line)
@@ -1375,7 +1389,7 @@ def nanopolish(baseFileName,args):
            
         cmd = ['python' ,
                 #'/Users/evand/Downloads/nanopolish/nanopolish/scripts/nanopolish_merge.py'
-               os.path.join(nanopolishDir,'scripts','nanopolish_merge.py')
+               os.path.join(args.pathNanopolish,'scripts','nanopolish_merge.py')
                                ]
         cmd.extend(polishedFiles)
         p1 = Popen(cmd,

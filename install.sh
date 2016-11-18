@@ -37,3 +37,30 @@ cd DAZZ_DB; git checkout 8cb2f29c4011a2c2; make
 cd $curdir
 wget ftp://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/2.4.0/ncbi-blast-2.4.0+-x64-linux.tar.gz
 tar -xzf ncbi-blast-2.4.0+-x64-linux.tar.gz
+
+#Install samtools
+cd $curdir
+git clone --recursive https://github.com/samtools/htslib.git
+cd htslib; git checkout 6bed35a3eaefa3baa2c7e0166ceba442212f166b;make
+
+#probably you need: apt-get install libncurses5-dev
+cd $curdir
+git clone --recursive https://github.com/samtools/samtools.git
+cd samtools; git checkout 897c0027a04501e3ea33d94b5cdeb633d010da8d; make
+
+#Instal bwa
+cd $curdir
+git clone https://github.com/lh3/bwa.git
+cd bwa; git checkout 5961611c358e480110793bbf241523a3cfac049b; make
+
+#Install nanopolish, we used a forked version that has a 'build in' supporting fraction filter
+cd $curdir
+git clone --recursive https://github.com/EvdH0/nanopolish.git
+cd nanopolish; git checkout 04fd9aecbb4ab266350476b957f4abb8ed994d8d; make 
+
+#Install GNU parallel, we don't actually use this for nanopolish, but kept it in as a possiblity
+cd $curdir
+wget http://ftp.gnu.org/gnu/parallel/parallel-20160922.tar.bz2
+tar xvjf parallel-20160922.tar.bz2
+cd parallel-20160922/
+./configure && make && sudo make install
