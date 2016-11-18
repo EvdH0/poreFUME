@@ -70,12 +70,12 @@ optional arguments:
                         for a barcode. (default: 60)
   --pathNanocorrect [PATHNANOCORRECT]
                         Set the path to the nanocorrect files (default:
-                        /Users/evand/nanocorrect/nanocorrect/)
+                        /Users/evand/Downloads/testnanocorrect/nanocorrect/)
   --pathNanopolish [PATHNANOPOLISH]
                         Set the path to the nanopolish files (default:
-                        /Users/evand/nanopolish/nanopolish/)
+                        /Users/evand/Downloads/nanopolish/nanopolish/)
   --pathBWA [PATHBWA]   Set the path to BWA (default:
-                        /Users/evand/nanopolish/bwa)
+                        /Users/evand/Downloads/nanopolish/bwa)
   --pathRawreads [PATHRAWREADS]
                         Set the path to the raw reads (.fast5 files),
                         nanopolish needs this. As a hint, this should be the
@@ -100,7 +100,8 @@ optional arguments:
 
 ### Example
 
-```poreFUME.py inputData/2DnanoporeData.fasta inputData/barcodes.fasta --PacBioLegacyBarcode --barcodeThreshold 50 --annotateAll --verbose --cores 8```
+
+```python poreFUME.py inputData/2DnanoporeData.fasta inputData/barcodes.fasta --PacBioLegacyBarcode --cores 8 --pathCARD=inputData/n.fasta.protein.homolog.fasta --pathNanocorrect=/home/ubuntu/poreFUME/nanocorrect/ --pathRawreads=/home/ubuntu/poreFUME/test/data/testSet75  --pathNanopolish=/home/ubuntu/poreFUME/nanopolish/ --verbose```
 
 ## Output :
 
