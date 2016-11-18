@@ -145,7 +145,6 @@ With the ```--cores``` flag the following processes can be parallelized:
 ## Testing
 To test the working of poreFUME you can run ```nosetests -v``` which should output something like
 ```
-ubuntu@ip-172-3:~/poreFUME$ nosetests -v
 test this ... ok
 testCARDavialable (test.TestCARD) ... ok
 testInputavialable (test.TestCARD) ... ok
@@ -157,11 +156,14 @@ testDBsplit (test.TestDependencies) ... ok
 testF2DB (test.TestDependencies) ... ok
 testLAcat (test.TestDependencies) ... ok
 testPOA (test.TestDependencies) ... ok
+testParallel (test.TestDependencies) ... ok
+testSamtools (test.TestDependencies) ... ok
+testbwaVersion (test.TestDependencies) ... ok
 job ranger returns index of begin and end of job range. ... ok
 testOverlap (test.TestFunctions) ... ok
 
 ----------------------------------------------------------------------
-Ran 13 tests in 0.272s
+Ran 16 tests in 1.074s
 
 OK
 ```
