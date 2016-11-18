@@ -23,7 +23,7 @@ if [ ! -f inputData/testSet75.fasta ]; then
 fi
 
 cd $curdir
-python poreFUME.py inputData/testSet76.fasta inputData/pb_39.fasta --PacBioLegacyBarcode --cores 1 --pathCARD=inputData/n.fasta.protein.homolog.fasta --pathNanocorrect=/home/ubuntu/poreFUME/nanocorrect/ --pathRawreads=/home/ubuntu/poreFUME/test/data/testSet75 --overwriteNanocorrect --pathNanopolish=/home/ubuntu/poreFUME/nanopolish/ --overwriteNanopolish --overwriteDemux --overwriteCARD
+python poreFUME.py inputData/testSet75.fasta inputData/pb_39.fasta --PacBioLegacyBarcode --cores 8 --pathCARD=inputData/n.fasta.protein.homolog.fasta --pathNanocorrect=$curdir/nanocorrect/ --pathRawreads=$curdir/test/data/testSet75 --overwriteNanocorrect --pathNanopolish=$curdir/nanopolish/ --overwriteNanopolish --overwriteDemux --overwriteCARD
 
 if ! diff -q output/annotation/testSet75/testSet75.afterNP.annotated.csv test/data/testSet75.afterNP.annotated.csv > /dev/null  2>&1; then
     echo "Integration test failed, the output in output/annotation/testSet75/testSet75.afterNP.annotated.csv is not what is expected"
