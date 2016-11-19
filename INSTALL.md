@@ -23,6 +23,8 @@ poreFUME requires Python 2.7 or newer. Furthermore the following packages can be
 
  apt-get install build-essential
  apt-get install zlib1g-dev
+
+ apt-get install libncurses5-dev #needed for samtools
   
  pip install biopython
  pip install numpy
